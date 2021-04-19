@@ -26,22 +26,6 @@ const getContactById = async contactId => {
   }
 };
 
-const removeContact = async contactId => {
-  try {
-    const contacts = await listContacts();
-    const deletedContact = await getContactById(contactId); // взять все контакты
-
-    const newList = contacts.filter(
-      ({ id }) => id.toString() !== contactId.toString(),
-    );
-
-    await fsPromise.writeFile(contactsPath, JSON.stringify(newList));
-    return deletedContact;
-  } catch (err) {
-    errHandle(err); // Функа для обработки ошибок
-  }
-};
-
 const addContact = async body => {
   try {
     const contacts = await listContacts();
@@ -79,6 +63,24 @@ const updateContact = async (contactId, body) => {
     return updatedContact.id ? updatedContact : null;
   } catch (err) {
     errHandle(err);
+  }
+};
+
+const removeContact = async contactId => {
+  try {
+    const contacts = await listContacts();
+    const deletedContact = await getContactById(contactId); // взять все контакты
+
+    const newList = contacts.filter(
+      ({ id }) => id.toString() !== contactId.toString(),
+    );
+
+    await fsPromise.writeFile(contactsPath, JSON.stringify(newList));
+    return deletedContact
+      ? { message: 'contact deleted successefull!!' }
+      : null;
+  } catch (err) {
+    errHandle(err); // Функа для обработки ошибок
   }
 };
 
