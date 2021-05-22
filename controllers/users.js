@@ -3,13 +3,14 @@ const jimp = require('jimp');
 const fs = require('fs/promises');
 const path = require('path');
 const Users = require('../model/users');
+const EmailService = require('../services/email');
 const { HttpCode } = require('../helper/constants');
 require('dotenv').config();
 const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY;
 
 const reg = async (req, res, next) => {
-  const { email } = req.body;
-  const user = await Users.findByEmail(email);
+  const user = await Users.findByEmail(req.body.email);
+
   if (user) {
     return res.status(HttpCode.CONFLICT).json({
       status: 'error',
@@ -19,14 +20,23 @@ const reg = async (req, res, next) => {
   }
   try {
     const newUser = await Users.create(req.body);
+    const { id, name, email, avatar, verifyTokenEmail, subscription } = newUser;
+
+    try {
+      const emailService = new EmailService(process.env.NODE_ENV);
+      await emailService.sendVerifyEmail(verifyTokenEmail, email, name);
+    } catch (e) {
+      //loger
+      console.log('newUserCreate', e.message);
+    }
     return res.status(HttpCode.CREATED).json({
       status: 'success',
       code: HttpCode.CREATED,
       data: {
-        id: newUser.id,
-        email: newUser.email,
-        subscription: newUser.subscription,
-        avatar: newUser.avatar,
+        id,
+        email,
+        subscription,
+        avatar,
       },
     });
   } catch (error) {
@@ -37,11 +47,11 @@ const login = async (req, res, next) => {
   const { email, password } = req.body;
   const user = await Users.findByEmail(email);
   const isValidPassword = await user?.validPassword(password);
-  if (!user || !isValidPassword) {
+  if (!user || !isValidPassword || !user.verify) {
     return res.status(HttpCode.UNAUTHORIZED).json({
       status: 'Unauthorized',
       code: HttpCode.UNAUTHORIZED,
-      message: 'Email or password is wrong',
+      message: 'Invalid credentials',
     });
   }
   const payload = { id: user.id };
@@ -81,6 +91,7 @@ const updateAvatar = async (req, res, next) => {
     .status(HttpCode.OK)
     .json({ status: 'success', code: HttpCode.OK, data: { avatarUrl } });
 };
+
 const saveAvatarUsers = async req => {
   const FOLDER_AVATARS = process.env.FOLDER_AVATARS;
   // req.file
@@ -113,10 +124,59 @@ const saveAvatarUsers = async req => {
   return path.join(FOLDER_AVATARS, newNameAvatar);
 };
 
+const verify = async (req, res, next) => {
+  try {
+    const user = await Users.findByVerifyTokenEmail(
+      req.params.verificationToken,
+    );
+    if (user) {
+      await Users.updateVerifyToken(user.id, true, null);
+      return res.status(HttpCode.OK).json({
+        status: 'success',
+        code: HttpCode.OK,
+        data: { message: 'Verification successFull' },
+      });
+    }
+    return res.status(HttpCode.BAD_REQUEST).json({
+      status: 'error',
+      code: HttpCode.BAD_REQUEST,
+      message: 'Your verification token is not valid. Contact to administrator',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const repeatEmailVerify = async (req, res, next) => {
+  try {
+    const user = await Users.findByEmail(req.body.email);
+    if (user) {
+      const { name, verifyTokenEmail, email } = user;
+
+      const emailService = new EmailService(process.env.NODE_ENV);
+      await emailService.sendVerifyEmail(verifyTokenEmail, email, name);
+      return res.status(HttpCode.OK).json({
+        status: 'success',
+        code: HttpCode.OK,
+        data: { message: 'Verification email resubmitted' },
+      });
+    }
+    return res.status(HttpCode.NOF_FOUND).json({
+      status: 'error',
+      code: HttpCode.NOF_FOUND,
+      message: 'User not found',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   reg,
   login,
   logout,
   current,
   updateAvatar,
+  verify,
+  repeatEmailVerify,
 };
